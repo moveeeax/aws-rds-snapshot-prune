@@ -1,0 +1,11 @@
+# Built binary (anchored to repo root so it never shadows cmd/ source dirs)
+/aws-rds-snapshot-prune
+/arsp
+
+# Go build/test artifacts
+*.test
+*.out
+/dist/
+
+# Keep fixtures/testdata tracked
+!testdata/**

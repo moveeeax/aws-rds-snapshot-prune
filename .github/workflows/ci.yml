@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: aws-rds-snapshot-prune
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Go
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends golang-go ca-certificates
+          go version
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Demo (offline)
+        run: go run ./examples/demo
