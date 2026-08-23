@@ -13,6 +13,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The race detector needs cgo, so make sure a C toolchain is present on
+      # the minimal self-hosted runner.
+      - name: Install toolchain
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends build-essential
+          fi
+
       # setup-go pulls the official .tar.gz (not .tar.xz), so it works on the
       # minimal self-hosted ARC runner.
       - uses: actions/setup-go@v5
