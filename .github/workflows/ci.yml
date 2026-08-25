@@ -9,12 +9,11 @@ on:
 
 jobs:
   build-test:
-    runs-on: aws-rds-snapshot-prune
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # The race detector needs cgo, so make sure a C toolchain is present on
-      # the minimal self-hosted runner.
+      # The race detector needs cgo, so make sure a C toolchain is present.
       - name: Install toolchain
         run: |
           if command -v apt-get >/dev/null 2>&1; then
@@ -22,8 +21,7 @@ jobs:
             sudo apt-get install -y --no-install-recommends build-essential
           fi
 
-      # setup-go pulls the official .tar.gz (not .tar.xz), so it works on the
-      # minimal self-hosted ARC runner.
+      # Go version comes straight from go.mod.
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
