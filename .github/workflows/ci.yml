@@ -7,27 +7,31 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # go.mod declares the minimum (go 1.26); CI also covers the newest
+        # stable release so toolchain regressions show up early.
+        go: ["1.26", "1.27"]
+    name: build-test (go ${{ matrix.go }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      # The race detector needs cgo, so make sure a C toolchain is present.
-      - name: Install toolchain
-        run: |
-          if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends build-essential
-          fi
-
-      # Go version comes straight from go.mod.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.22"
+          go-version: ${{ matrix.go }}
 
       - name: Vet
         run: go vet ./...
+
+      - name: Gofmt
+        run: test -z "$(gofmt -l .)"
 
       - name: Test
         run: go test -race ./...
