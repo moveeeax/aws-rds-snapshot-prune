@@ -1,7 +1,7 @@
 # aws-rds-snapshot-prune
 
 [![ci](https://github.com/moveeeax/aws-rds-snapshot-prune/actions/workflows/ci.yml/badge.svg)](https://github.com/moveeeax/aws-rds-snapshot-prune/actions/workflows/ci.yml)
-![go](https://img.shields.io/badge/go-1.22-00ADD8?logo=go&logoColor=white)
+![go](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Prune old Amazon RDS **manual** snapshots by age and retained count — safely,
@@ -32,6 +32,8 @@ deterministic — the same input always yields the same plan — which is what
 makes it safe to gate CI on.
 
 ## Install
+
+Requires Go 1.26 or newer (CI tests Go 1.26 and 1.27).
 
 ```shell
 go install github.com/moveeeax/aws-rds-snapshot-prune/cmd/aws-rds-snapshot-prune@latest
