@@ -31,6 +31,8 @@ func newRootCmd() *cobra.Command {
 		region    string
 		allow     string
 		deny      string
+		keepTags  []string
+		orphans   string
 		apply     bool
 		asJSON    bool
 	)
@@ -41,7 +43,8 @@ func newRootCmd() *cobra.Command {
 		Version: version,
 		Long: "Prune old Amazon RDS manual snapshots safely: keep the N most-recent\n" +
 			"per instance and anything newer than a cutoff, delete the rest.\n" +
-			"Dry-run by default; automated and shared snapshots are never touched.",
+			"Dry-run by default; automated and shared snapshots are never touched.\n" +
+			"Snapshots of deleted instances are kept unless --orphans prune.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -59,6 +62,21 @@ func newRootCmd() *cobra.Command {
 				if policy.Deny, err = regexp.Compile(deny); err != nil {
 					return fmt.Errorf("--deny: %w", err)
 				}
+			}
+
+			for _, kt := range keepTags {
+				m, err := prune.ParseTagMatch(kt)
+				if err != nil {
+					return fmt.Errorf("--keep-tag: %w", err)
+				}
+				policy.KeepTags = append(policy.KeepTags, m)
+			}
+			switch orphans {
+			case "keep":
+			case "prune":
+				policy.PruneOrphans = true
+			default:
+				return fmt.Errorf("--orphans: must be keep or prune, got %q", orphans)
 			}
 
 			ctx := context.Background()
@@ -98,6 +116,8 @@ func newRootCmd() *cobra.Command {
 	f.StringVar(&region, "region", "", "AWS region (default: from environment/profile)")
 	f.StringVar(&allow, "allow", "", "only prune instances whose id matches this regex")
 	f.StringVar(&deny, "deny", "", "never prune instances whose id matches this regex")
+	f.StringArrayVar(&keepTags, "keep-tag", nil, "never delete snapshots with this tag: key or key=value (repeatable)")
+	f.StringVar(&orphans, "orphans", "keep", "snapshots whose source instance was deleted: keep or prune (prune ignores --keep-last)")
 	f.BoolVar(&apply, "apply", false, "actually delete (default: dry-run)")
 	f.BoolVar(&asJSON, "json", false, "emit JSON instead of a table")
 	return cmd

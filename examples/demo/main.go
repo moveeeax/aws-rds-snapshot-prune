@@ -23,8 +23,15 @@ func main() {
 		mk("payments-2025-11-01", "payments", 295, true),
 		mk("analytics-2026-01-10", "analytics", 225, true),
 		mk("rds:analytics-auto", "analytics", 3, false), // automated, never touched
+		mk("analytics-pre-migration", "analytics", 400, true),
+		mk("legacy-final", "legacy", 500, true), // source instance deleted
 	}
-	res := prune.Result{Decisions: prune.Plan(snaps,
-		prune.Policy{KeepLast: 1, OlderThan: 90 * 24 * time.Hour}, now)}
+	snaps[5].Tags = map[string]string{"retain": "pre-migration"}
+	snaps[6].SourceDeleted = true
+	res := prune.Result{Decisions: prune.Plan(snaps, prune.Policy{
+		KeepLast:  1,
+		OlderThan: 90 * 24 * time.Hour,
+		KeepTags:  []prune.TagMatch{{Key: "retain", AnyValue: true}},
+	}, now)}
 	_ = res.Write(os.Stdout, false)
 }

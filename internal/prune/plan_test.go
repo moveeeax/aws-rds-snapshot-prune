@@ -118,3 +118,98 @@ func TestPlanDeterministicOrder(t *testing.T) {
 		t.Fatalf("expected a,z ordering for oldest deletions, got %s,%s", first[0].Snapshot.ID, first[1].Snapshot.ID)
 	}
 }
+
+func TestPlanKeepTag(t *testing.T) {
+	tagged := func(id string, tags map[string]string) Snapshot {
+		s := manual(id, "db1", 300)
+		s.Tags = tags
+		return s
+	}
+	snaps := []Snapshot{
+		tagged("any", map[string]string{"keep": "whatever"}),
+		tagged("exact", map[string]string{"purpose": "pre-migration"}),
+		tagged("other-value", map[string]string{"purpose": "scratch"}),
+		tagged("untagged", nil),
+		manual("newest", "db1", 1),
+	}
+	p := Policy{
+		KeepLast:  1,
+		OlderThan: 90 * 24 * time.Hour,
+		KeepTags: []TagMatch{
+			{Key: "keep", AnyValue: true},
+			{Key: "purpose", Value: "pre-migration"},
+		},
+	}
+	decisions := Plan(snaps, p, base)
+	got := ids(ToDelete(decisions))
+	if got["any"] || got["exact"] {
+		t.Fatalf("tagged snapshots must be protected, got %v", got)
+	}
+	if !got["other-value"] || !got["untagged"] {
+		t.Fatalf("non-matching snapshots should be deleted, got %v", got)
+	}
+	for _, d := range decisions {
+		if (d.Snapshot.ID == "any" || d.Snapshot.ID == "exact") && d.Reason != "kept: protected tag" {
+			t.Fatalf("%s: unexpected reason %q", d.Snapshot.ID, d.Reason)
+		}
+	}
+}
+
+func TestPlanOrphans(t *testing.T) {
+	orphan := func(id string, age int) Snapshot {
+		s := manual(id, "gone", age)
+		s.SourceDeleted = true
+		return s
+	}
+	snaps := []Snapshot{orphan("final", 300), orphan("recent", 10)}
+	p := Policy{KeepLast: 5, OlderThan: 90 * 24 * time.Hour}
+
+	// default: orphans are kept no matter their age
+	for _, d := range Plan(snaps, p, base) {
+		if d.Delete || d.Reason != "kept: source deleted" {
+			t.Fatalf("%s: default must keep orphans, got delete=%v %q", d.Snapshot.ID, d.Delete, d.Reason)
+		}
+	}
+
+	// prune: keep-last 5 does not protect them, the age rule still does
+	p.PruneOrphans = true
+	reasons := map[string]string{}
+	for _, d := range Plan(snaps, p, base) {
+		reasons[d.Snapshot.ID] = d.Reason
+	}
+	if reasons["final"] != "delete: source deleted" {
+		t.Fatalf("old orphan should be deleted, got %q", reasons["final"])
+	}
+	if reasons["recent"] != "kept: source deleted, newer than age threshold" {
+		t.Fatalf("young orphan should be kept by age, got %q", reasons["recent"])
+	}
+
+	// a protected tag still wins over orphan pruning
+	tagged := orphan("tagged", 300)
+	tagged.Tags = map[string]string{"keep": ""}
+	p.KeepTags = []TagMatch{{Key: "keep", AnyValue: true}}
+	if got := ToDelete(Plan([]Snapshot{tagged}, p, base)); len(got) != 0 {
+		t.Fatalf("tagged orphan must be kept, got %v", got)
+	}
+}
+
+func TestParseTagMatch(t *testing.T) {
+	cases := []struct {
+		in   string
+		want TagMatch
+	}{
+		{"keep", TagMatch{Key: "keep", AnyValue: true}},
+		{"env=prod", TagMatch{Key: "env", Value: "prod"}},
+		{"note=a=b", TagMatch{Key: "note", Value: "a=b"}},
+		{"empty=", TagMatch{Key: "empty", Value: ""}},
+	}
+	for _, c := range cases {
+		got, err := ParseTagMatch(c.in)
+		if err != nil || got != c.want {
+			t.Errorf("ParseTagMatch(%q) = %+v, %v; want %+v", c.in, got, err, c.want)
+		}
+	}
+	if _, err := ParseTagMatch("=value"); err == nil {
+		t.Error("empty key must be rejected")
+	}
+}
