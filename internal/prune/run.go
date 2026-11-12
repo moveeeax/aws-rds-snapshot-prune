@@ -50,6 +50,11 @@ func Run(ctx context.Context, api RDSAPI, opt Options) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("list snapshots: %w", err)
 	}
+	live, err := ListInstances(ctx, api)
+	if err != nil {
+		return Result{}, fmt.Errorf("list instances: %w", err)
+	}
+	MarkOrphans(snaps, live)
 	decisions := Plan(snaps, opt.Policy, now)
 	res := Result{Decisions: decisions, Applied: opt.Apply}
 

@@ -24,12 +24,45 @@ A snapshot is a delete candidate only when **all** of these hold:
 - it is **not shared** from another account,
 - it is **not** within the `--keep-last` newest of its instance, **and**
 - it is **older than** `--older-than`,
-- and its instance is not excluded by `--allow` / `--deny`.
+- its instance is not excluded by `--allow` / `--deny`,
+- it carries **no** tag listed in `--keep-tag`, **and**
+- its source instance still exists (see orphans below).
 
 `--keep-last` is evaluated **per DB instance**, so a busy instance and a quiet
 one each keep their own recent history. The retention decision is pure and
 deterministic — the same input always yields the same plan — which is what
 makes it safe to gate CI on.
+
+### Protected tags
+
+`--keep-tag` never deletes a snapshot that carries the tag. Pass `key` to match
+any value or `key=value` to match one value exactly (keys and values are
+case-sensitive, as in AWS). Repeat the flag to protect several tags. Protected
+snapshots show the reason `kept: protected tag` and do not count toward
+`--keep-last`, so the instance still keeps its N newest unprotected snapshots.
+
+```shell
+aws-rds-snapshot-prune --keep-tag retain --keep-tag purpose=pre-migration
+```
+
+### Orphans (source instance deleted)
+
+A snapshot whose source DB instance no longer exists is an orphan; this is
+usually the final snapshot taken when the instance was deleted. The tool lists
+the region's instances with `DescribeDBInstances` and treats a snapshot as an
+orphan only when neither its instance identifier nor its `DbiResourceId`
+matches a live instance (a renamed instance keeps its resource id, so its
+snapshots are not orphans).
+
+- `--orphans keep` (default): orphans are never deleted, reason
+  `kept: source deleted`.
+- `--orphans prune`: orphans older than `--older-than` are deleted, reason
+  `delete: source deleted`. `--keep-last` does not apply to them, because
+  there is no live instance left whose recent history needs keeping.
+  `--keep-tag`, `--allow` and `--deny` still apply.
+
+If the instance list cannot be fetched, the run fails with exit code `2`
+instead of guessing.
 
 ## Install
 
@@ -69,6 +102,8 @@ aws-rds-snapshot-prune --keep-last 5 --older-than 90d --json
 | `--region` | env/profile | AWS region |
 | `--allow` | — | Only prune instances whose id matches this regex |
 | `--deny` | — | Never prune instances whose id matches this regex |
+| `--keep-tag` | — | Never delete snapshots with this tag (`key` or `key=value`, repeatable) |
+| `--orphans` | `keep` | Snapshots of deleted instances: `keep` or `prune` (`prune` ignores `--keep-last`) |
 | `--apply` | `false` | Actually delete (default is dry-run) |
 | `--json` | `false` | Emit JSON instead of a table |
 
@@ -77,12 +112,14 @@ aws-rds-snapshot-prune --keep-last 5 --older-than 90d --json
 `go run ./examples/demo` runs the planner on synthetic snapshots:
 
 ```text
-ACTION  INSTANCE   SNAPSHOT              CREATED     REASON
-delete  payments   payments-2025-11-01   2025-11-01  delete: exceeds retention
-delete  payments   payments-2026-05-01   2026-05-01  delete: exceeds retention
-keep    analytics  analytics-2026-01-10  2026-01-10  kept: within keep-last
-keep    analytics  rds:analytics-auto    2026-08-20  skipped: automated snapshot
-keep    payments   payments-2026-08-22   2026-08-22  kept: within keep-last
+ACTION  INSTANCE   SNAPSHOT                 CREATED     REASON
+delete  payments   payments-2025-11-01      2025-11-01  delete: exceeds retention
+delete  payments   payments-2026-05-01      2026-05-01  delete: exceeds retention
+keep    legacy     legacy-final             2025-04-10  kept: source deleted
+keep    analytics  analytics-pre-migration  2025-07-19  kept: protected tag
+keep    analytics  analytics-2026-01-10     2026-01-10  kept: within keep-last
+keep    analytics  rds:analytics-auto       2026-08-20  skipped: automated snapshot
+keep    payments   payments-2026-08-22      2026-08-22  kept: within keep-last
 
 2 snapshot(s) pending deletion
 ```
@@ -91,7 +128,8 @@ keep    payments   payments-2026-08-22   2026-08-22  kept: within keep-last
 
 Standard AWS SDK resolution: environment variables, shared config/credentials,
 or an instance/role profile. The IAM principal needs
-`rds:DescribeDBSnapshots` and, for `--apply`, `rds:DeleteDBSnapshot`.
+`rds:DescribeDBSnapshots`, `rds:DescribeDBInstances` (orphan detection) and,
+for `--apply`, `rds:DeleteDBSnapshot`.
 
 ## Exit codes
 
